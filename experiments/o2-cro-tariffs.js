@@ -1,6 +1,15 @@
 (() => {
   "use strict";
 
+  // Prevent recursive Angular click triggering
+  let isTriggeringAngularOffer = false;
+
+  // Map CRO cards → real Angular offer buttons
+  const OFFER_MAP = {
+    Unlimited: 0,
+    "100GB": 1,
+  };
+
   /* -------------------------------
        0. Define Tariff Data
     -------------------------------- */
@@ -284,7 +293,6 @@
 
             <div class="${EXPERIMENT_ID}-content">
             
-           
                 <div class="new-tariff-card-plan-info__allowance">${
                   tariff.dataAllowance
                 }</div>
@@ -293,17 +301,15 @@
                 <div class="new-tariff-card-plan-info__fair-usage-link ng-star-inserted">
 	                <a href="https://www.o2.co.uk/termsandconditions/mobile/o2-consumer-fair-usage-policy" target="_blank">Fair usage applies<span class="sr-only" style="position: absolute !important;">&nbsp;Opens in new tab</span></a>
                 </div>
-
                 
-
                 ${buildPriceBlock(tariff)}
-
 
                 <div class="new-tariff-promo-block-primary__section-title">Offer</div>
                 <div class="ng-star-inserted">
                     <button 
                         class="new-tariff-promo-block-primary__container" 
                         data-cro-offer
+                        data-allowance="Unlimited"
                         style="background-color: ${COLOR_LAVENDER};"
                     >
                         <div class="new-tariff-promo-block-primary__title">
@@ -387,11 +393,75 @@
   };
 
   /* -------------------------------
-    Init (poll until Angular ready)
+     Open Modal on offer button click
+    -------------------------------- */
+  /**
+   * Simulate a real user click (Angular-safe)
+   */
+
+  const attachOfferClickHandler = () => {
+    if (window.__croOfferBound) return;
+    window.__croOfferBound = true;
+
+    document.addEventListener(
+      "click",
+      (e) => {
+        
+        // Ignore Angular-triggered clicks
+        if (isTriggeringAngularOffer) return;
+
+        const croOfferBtn = e.target.closest("[data-cro-offer]");
+        if (!croOfferBtn) return;
+
+        console.log("CRO: Offer clicked");
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        // pick a REAL Angular-bound offer button
+        const offerType = croOfferBtn.dataset.allowance; // "Unlimited" or "100GB"
+
+        const realOfferBtns = document.querySelectorAll(
+          "o2uk-device-tariff-cards .new-tariff-promo-block-primary__container"
+        );
+
+        const mappedIndex = OFFER_MAP[offerType] ?? 0;
+        const realOfferBtn = realOfferBtns[mappedIndex];
+
+        if (!realOfferBtn) {
+          console.warn("CRO: Real Angular offer button not found");
+          return;
+        }
+
+        isTriggeringAngularOffer = true;
+
+        // Exit CRO click stack, then let Angular run
+        setTimeout(() => {
+          realOfferBtn.dispatchEvent(
+            new MouseEvent("click", {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+            })
+          );
+
+          // Unlock after Angular handles it
+          setTimeout(() => {
+            isTriggeringAngularOffer = false;
+          }, 100);
+        }, 0);
+      },
+      true 
+    );
+  };
+
+  /* -------------------------------
+    Init - poll until Angular ready
     -------------------------------- */
   const init = () => {
     injectStyles();
     observeCapacityChange();
+    attachOfferClickHandler();
     fadeExistingTariffs();
 
     const interval = setInterval(() => {
